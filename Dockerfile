@@ -1,4 +1,4 @@
-FROM php:8.0.1-fpm
+FROM php:8.0.3-fpm
 
 MAINTAINER Marek Miernik <miernikmarek@gmail.com>
 
@@ -23,60 +23,6 @@ RUN set -x \
     && apt-get install --no-install-recommends --no-install-suggests -y \
         # for zip ext
         zlib1g-dev libzip-dev\
-        # for pg_pgsql ext
-        libpq-dev \
-        # for soap and xml related ext
-        libxml2-dev \
-        # for xslt ext
-        libxslt-dev \
-        # for gd ext
-        libjpeg-dev libpng-dev \
-        # for intl ext
-        libicu-dev openssl \
-        # for mbstring ext
-        libonig-dev \
-        # openssl
-        libssl-dev \
-        # htop for resource monitoring
-        htop \
-        # for pkill
-        procps \
-        vim iputils-ping curl iproute2 \
-        #
-        supervisor \
-        cron \
-        # for rabbit-query
-        librabbitmq-dev
-
-# INSTALL PHP EXTENSIONS VIA docker-php-ext-install SCRIPT
-COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/bin/install-php-extensions
-RUN install-php-extensions \
-  amqp \
-  bcmath \
-  calendar \
-  ctype \
-  dba \
-  dom \
-  exif \
-  fileinfo \
-  ftp \
-  gettext \
-  gd \
-  iconv \
-  intl \
-  mbstring \
-  opcache \
-  pcntl \
-  pdo \
-  pdo_pgsql \
-  pdo_mysql \
-  posix \
-  session \
-  simplexml \
-  soap \
-  sockets \
-  xsl \
-  zip
 
 COPY scripts/xoff.sh /usr/bin/xoff
 COPY scripts/xon.sh /usr/bin/xon
@@ -140,27 +86,11 @@ RUN set -x \
     && tar -C /usr/local/bin -xzvf dockerize.tar.gz \
     && rm dockerize.tar.gz
 
-############# CONFIGURE ############
-#  TWEAK PHP CONFIG
-RUN set -x \
-    && mv $PHP_INI_DIR/php.ini-production $PHP_INI_DIR/php.ini \
-    && rm /usr/local/etc/php-fpm.d/* \
-    && sed -i "s|;error_log = log/php-fpm.log|error_log = /proc/self/fd/2|" /usr/local/etc/php-fpm.conf \
-    && sed -i "s|memory_limit.*|memory_limit = 2048M|" $PHP_INI_DIR/php.ini \
-    && sed -i "s|max_execution_time.*|max_execution_time = 3000|" $PHP_INI_DIR/php.ini \
-    && sed -i "s|upload_max_filesize.*|upload_max_filesize = 32M|" $PHP_INI_DIR/php.ini \
-    && sed -i "s|post_max_size.*|post_max_size = 48M|" $PHP_INI_DIR/php.ini \
-    && sed -i "s|;date.timezone = *|date.timezone = Europe/London|" $PHP_INI_DIR/php.ini \
-    && cp $PHP_INI_DIR/php.ini $PHP_INI_DIR/php-cli.ini
-
 # COPY HTTP POOL CONFIGURATION
 COPY conf.d/php-fpm-www.conf /usr/local/etc/php-fpm.d/www.conf
 
 # COPY HTTP SERVER CONFIGURATION
 COPY conf.d/nginx-default.conf /etc/nginx/conf.d/default.conf
-
-# COPY SUPERVISOR INFRASTRUCTURE CONFIGURATION
-COPY conf.d/supervisor-infrastracture.conf /etc/supervisor/conf.d/infrastructure.conf
 
 RUN set -x \
    && bash -c 'echo "alias sf=bin/console" >> ~/.bashrc'
@@ -169,7 +99,3 @@ EXPOSE 8080
 
 STOPSIGNAL SIGTERM
 
-COPY healthcheck.sh /healthcheck.sh
-HEALTHCHECK CMD (/healthcheck.sh nginx && /healthcheck.sh php_fpm) || exit 1
-
-CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
