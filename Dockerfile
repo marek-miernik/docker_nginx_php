@@ -1,4 +1,4 @@
-FROM php:7.4.12-fpm
+FROM php:7.4.16-fpm
 
 MAINTAINER Marek Miernik <miernikmarek@gmail.com>
 
@@ -59,7 +59,6 @@ RUN docker-php-ext-install \
   ftp \
   gettext \
   gd \
-#  hash \
   iconv \
   intl \
   mbstring \
