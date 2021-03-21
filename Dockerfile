@@ -1,4 +1,4 @@
-FROM php:7.4.16-fpm
+FROM php:8.0.1-fpm
 
 MAINTAINER Marek Miernik <miernikmarek@gmail.com>
 
@@ -9,6 +9,7 @@ ENV USER_HOME_DIR /home/$USER_LOGIN
 ENV APP_DIR       /opt/app
 
 ############ PHP-FPM ############
+
 # CREATE WWW-DATA HOME DIRECTORY
 RUN set -x \
     && mkdir /home/www-data \
@@ -48,7 +49,9 @@ RUN set -x \
         librabbitmq-dev
 
 # INSTALL PHP EXTENSIONS VIA docker-php-ext-install SCRIPT
-RUN docker-php-ext-install \
+COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/bin/install-php-extensions
+RUN install-php-extensions \
+  amqp \
   bcmath \
   calendar \
   ctype \
@@ -89,10 +92,6 @@ RUN set -x \
     && mv /usr/local/etc/php/conf.d/xdebug.ini /usr/local/etc/php/conf.d/xdebug.off  \
     && echo 'PS1="[\$(test -e /usr/local/etc/php/conf.d/xdebug.off && echo XOFF || echo XON)] $HC$FYEL[ $FBLE${debian_chroot:+($debian_chroot)}\u$FYEL: $FBLE\w $FYEL]\\$ $RS"' | tee /etc/bash.bashrc /etc/skel/.bashrc
 
-RUN set -x \
-    && pecl install amqp \
-    && docker-php-ext-enable amqp
-
 # INSTALL COMPOSER
 ENV COMPOSER_HOME /usr/local/composer
 # https://getcomposer.org/doc/03-cli.md#composer-allow-superuser
@@ -105,6 +104,7 @@ RUN set -x \
     && echo "export COMPOSER_HOME=/usr/local/composer" >> /etc/bash.bashrc
 
 ############ NGINX ############
+
 ## INSTALL NGINX (based on the official nginx image)
 RUN set -x \
   && apt-get update \
@@ -140,8 +140,27 @@ RUN set -x \
     && tar -C /usr/local/bin -xzvf dockerize.tar.gz \
     && rm dockerize.tar.gz
 
+############# CONFIGURE ############
+#  TWEAK PHP CONFIG
+RUN set -x \
+    && mv $PHP_INI_DIR/php.ini-production $PHP_INI_DIR/php.ini \
+    && rm /usr/local/etc/php-fpm.d/* \
+    && sed -i "s|;error_log = log/php-fpm.log|error_log = /proc/self/fd/2|" /usr/local/etc/php-fpm.conf \
+    && sed -i "s|memory_limit.*|memory_limit = 2048M|" $PHP_INI_DIR/php.ini \
+    && sed -i "s|max_execution_time.*|max_execution_time = 3000|" $PHP_INI_DIR/php.ini \
+    && sed -i "s|upload_max_filesize.*|upload_max_filesize = 32M|" $PHP_INI_DIR/php.ini \
+    && sed -i "s|post_max_size.*|post_max_size = 48M|" $PHP_INI_DIR/php.ini \
+    && sed -i "s|;date.timezone = *|date.timezone = Europe/London|" $PHP_INI_DIR/php.ini \
+    && cp $PHP_INI_DIR/php.ini $PHP_INI_DIR/php-cli.ini
+
+# COPY HTTP POOL CONFIGURATION
+COPY conf.d/php-fpm-www.conf /usr/local/etc/php-fpm.d/www.conf
+
 # COPY HTTP SERVER CONFIGURATION
 COPY conf.d/nginx-default.conf /etc/nginx/conf.d/default.conf
+
+# COPY SUPERVISOR INFRASTRUCTURE CONFIGURATION
+COPY conf.d/supervisor-infrastracture.conf /etc/supervisor/conf.d/infrastructure.conf
 
 RUN set -x \
    && bash -c 'echo "alias sf=bin/console" >> ~/.bashrc'
@@ -149,3 +168,8 @@ RUN set -x \
 EXPOSE 8080
 
 STOPSIGNAL SIGTERM
+
+COPY healthcheck.sh /healthcheck.sh
+HEALTHCHECK CMD (/healthcheck.sh nginx && /healthcheck.sh php_fpm) || exit 1
+
+CMD ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
